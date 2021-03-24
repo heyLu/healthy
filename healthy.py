@@ -1,5 +1,6 @@
 import os
 import random
+import threading
 import time
 
 import gi
@@ -71,38 +72,40 @@ class CPUGraphCollection(Gtk.Box):
             self.cpu_graphs.append(cpu_graph)
 
         self.cpu = {}
-        GLib.idle_add(self.update)
+
+        self.bg_thread = threading.Thread(target=self.update)
+        self.bg_thread.start()
 
     def update(self):
-        global_cpu = read_global_stat()
-        top_20_pids = cpu_stats(self.sample_seconds)
-        cpu_usages = []
-        for pid in top_20_pids:
-            if pid not in self.cpu:
-                self.cpu[pid] = [0]*self.num_samples
+        while True:
+            global_cpu = read_global_stat()
+            top_20_pids = cpu_stats(self.sample_seconds)
+            cpu_usages = []
+            for pid in top_20_pids:
+                if pid not in self.cpu:
+                    self.cpu[pid] = [0]*self.num_samples
 
-            self.cpu[pid].append(pid.cpu_usage)
-            if len(self.cpu[pid]) > self.num_samples:
-                self.cpu[pid].pop(0)
-
-        for pid in self.cpu:
-            if pid not in top_20_pids:
-                self.cpu[pid].append(0)
+                self.cpu[pid].append(pid.cpu_usage)
                 if len(self.cpu[pid]) > self.num_samples:
                     self.cpu[pid].pop(0)
 
-            cpu_usages.append((pid, self.cpu[pid]))
+            for pid in self.cpu:
+                if pid not in top_20_pids:
+                    self.cpu[pid].append(0)
+                    if len(self.cpu[pid]) > self.num_samples:
+                        self.cpu[pid].pop(0)
 
-        cpu_usages = list(self.cpu.items())
-        cpu_usages.sort(key=lambda u: sum(u[1]), reverse=True)
-        cpu_usages = cpu_usages[:20]
-        for i, cpu_usage in enumerate(cpu_usages):
-            self.cpu_graphs[i].name = cpu_usage[0].tcomm
-            self.cpu_graphs[i].cmdline = cpu_usage[0].cmdline
-            self.cpu_graphs[i].cpu_usage = cpu_usage[1]
-            self.cpu_graphs[i].queue_draw()
+                cpu_usages.append((pid, self.cpu[pid]))
 
-        GLib.idle_add(self.update)
+            cpu_usages = list(self.cpu.items())
+            cpu_usages.sort(key=lambda u: sum(u[1]), reverse=True)
+            cpu_usages = cpu_usages[:20]
+            for i, cpu_usage in enumerate(cpu_usages):
+                self.cpu_graphs[i].name = cpu_usage[0].tcomm
+                self.cpu_graphs[i].cmdline = cpu_usage[0].cmdline
+                self.cpu_graphs[i].cpu_usage = cpu_usage[1]
+
+            GLib.idle_add(self.queue_draw)
 
 class PIDStat():
     def __init__(self, stat_line):
