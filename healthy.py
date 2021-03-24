@@ -120,7 +120,7 @@ class PIDStat():
         self.cmdline = None
         try:
             with open("/proc/"+self.fields[0]+"/cmdline") as f:
-                self.cmdline = f.readline().strip()
+                self.cmdline = f.readline().strip().replace("\x00", " ")
         except Exception as ex:
             print("Ignoring", ex)
 
