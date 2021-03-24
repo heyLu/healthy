@@ -118,9 +118,14 @@ class PIDStat():
         return (self.pid, self.tcomm) == (other.pid, other.tcomm)
 # https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/filesystems/proc.rst
 def read_stat(pid):
-    with open("/proc/"+pid+"/stat") as f:
-        stat_line = f.readline().strip()
-        return PIDStat(stat_line)
+    try:
+        with open("/proc/"+pid+"/stat") as f:
+            stat_line = f.readline().strip()
+            return PIDStat(stat_line)
+    except Exception as ex:
+        print("Ignoring", ex)
+        # return fake stat that should never appear in stuff
+        return PIDStat("-1 (<error>) Z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
 
 def read_global_stat():
     # user + nice + system + idle + iowait + irq + softirq + steal
