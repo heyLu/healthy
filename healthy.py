@@ -64,7 +64,7 @@ class CPUGraphCollection(Gtk.Box):
             self.cpu_graphs.append(cpu_graph)
 
         self.cpu = {}
-        self.update()
+        GLib.idle_add(self.update)
 
     def update(self):
         global_cpu = read_global_stat()
