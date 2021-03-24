@@ -78,7 +78,7 @@ class CPUGraphCollection(Gtk.Box):
 
         self.cpu = {}
 
-        self.bg_thread = threading.Thread(target=self.update)
+        self.bg_thread = threading.Thread(target=self.update, daemon=True)
         self.bg_thread.start()
 
     def update(self):
