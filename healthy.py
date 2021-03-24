@@ -17,12 +17,14 @@ class CPUGraph(Gtk.Box):
 
         self.num_samples = num_samples
         self.name = name
+        self.pid = -1
         self.cmdline = None
         self.cpu_usage = cpu_usage
         self.max_cpu = os.cpu_count() * 100
 
         self.label = Gtk.Label()
         self.label.set_max_width_chars(20)
+        self.label.set_single_line_mode(True)
 
         self.drawing_area = Gtk.DrawingArea()
         self.drawing_area.set_size_request(width=300, height=25)
@@ -37,8 +39,11 @@ class CPUGraph(Gtk.Box):
         self.pack_end(self.drawing_area, False, True, 5)
 
     def on_draw(self, widget, cairo_context):
-        self.label.set_text(self.name)
-        self.label.set_tooltip_text(self.cmdline)
+        self.label.set_label(self.name)
+        if self.cmdline:
+            self.label.set_tooltip_text(f"{self.pid} - {self.cmdline}")
+        else:
+            self.label.set_tooltip_text(f"{self.pid}")
         self.usage_label.set_text(f"{int(self.cpu_usage[-1])}%")
 
         width, height = self.drawing_area.get_size_request()
@@ -102,6 +107,7 @@ class CPUGraphCollection(Gtk.Box):
             cpu_usages = cpu_usages[:20]
             for i, cpu_usage in enumerate(cpu_usages):
                 self.cpu_graphs[i].name = cpu_usage[0].tcomm
+                self.cpu_graphs[i].pid = cpu_usage[0].pid
                 self.cpu_graphs[i].cmdline = cpu_usage[0].cmdline
                 self.cpu_graphs[i].cpu_usage = cpu_usage[1]
 
