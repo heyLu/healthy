@@ -25,11 +25,17 @@ class CPUGraph(Gtk.Box):
         self.drawing_area.set_size_request(width=300, height=30)
         self.drawing_area.connect("draw", self.on_draw)
 
+        self.usage_label = Gtk.Label()
+        # 4 characters, max is "100%"
+        self.usage_label.set_width_chars(4)
+
         self.pack_start(self.label, True, True, 5)
-        self.pack_end(self.drawing_area, False, True, 0)
+        self.pack_end(self.usage_label, False, True, 0)
+        self.pack_end(self.drawing_area, False, True, 5)
 
     def on_draw(self, widget, cairo_context):
         self.label.set_text(self.name)
+        self.usage_label.set_text(f"{int(self.cpu_usage[-1])}%")
 
         width, height = self.drawing_area.get_size_request()
 
