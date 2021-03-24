@@ -6,10 +6,8 @@ import time
 
 import gi
 gi.require_version("GLib", "2.0")
-gi.require_version("Gdk", "3.0")
-gi.require_version("Gtk", "3.0")
+gi.require_version("Gtk", "4.0")
 from gi.repository import GLib
-from gi.repository import Gdk
 from gi.repository import Gtk
 
 class CPUGraph(Gtk.Box):
@@ -23,23 +21,34 @@ class CPUGraph(Gtk.Box):
         self.cpu_usage = cpu_usage
         self.max_cpu = os.cpu_count() * 100
 
+        self.set_spacing(5)
+        self.set_margin_top(5)
+        self.set_margin_bottom(5)
+        self.set_margin_start(5)
+        self.set_margin_end(5)
+
         self.label = Gtk.Label()
         self.label.set_max_width_chars(20)
         self.label.set_single_line_mode(True)
+        self.label.set_halign(Gtk.Align.FILL)
+        self.label.set_hexpand(True)
 
         self.drawing_area = Gtk.DrawingArea()
-        self.drawing_area.set_size_request(width=300, height=25)
-        self.drawing_area.connect("draw", self.on_draw)
+        self.drawing_area.set_content_width(300)
+        self.drawing_area.set_content_height(25)
+        self.drawing_area.set_draw_func(self.draw)
+        #self.drawing_area.set_halign(Gtk.Align.FILL)
 
         self.usage_label = Gtk.Label()
         # 4 characters, max is "100%"
         self.usage_label.set_width_chars(4)
+        self.usage_label.set_valign(Gtk.Align.END)
 
-        self.pack_start(self.label, True, True, 5)
-        self.pack_end(self.usage_label, False, True, 0)
-        self.pack_end(self.drawing_area, False, True, 5)
+        self.append(self.label)
+        self.append(self.drawing_area)
+        self.append(self.usage_label)
 
-    def on_draw(self, widget, cairo_context):
+    def queue_draw(self):
         self.label.set_label(self.name)
         if self.cmdline:
             self.label.set_tooltip_text(f"{self.pid} - {self.cmdline}")
@@ -47,8 +56,9 @@ class CPUGraph(Gtk.Box):
             self.label.set_tooltip_text(f"{self.pid}")
         self.usage_label.set_text(f"{int(self.cpu_usage[-1])}%")
 
-        width, height = self.drawing_area.get_size_request()
+        self.drawing_area.queue_draw()
 
+    def draw(self, area, cairo_context, width, height):
         # white background
         cairo_context.set_source_rgb(1, 1, 1)
         cairo_context.rectangle(0, 0, width, height)
@@ -74,13 +84,19 @@ class CPUGraphCollection(Gtk.Box):
         self.cpu_graphs = []
         for _ in range(20):
             cpu_graph = CPUGraph(self.num_samples, "", [0]*self.num_samples)
-            self.pack_start(cpu_graph, True, True, 5)
+            self.append(cpu_graph)
             self.cpu_graphs.append(cpu_graph)
 
         self.cpu = {}
 
         self.bg_thread = threading.Thread(target=self.update, daemon=True)
         self.bg_thread.start()
+
+    def queue_draw(self):
+        Gtk.Box.queue_draw(self)
+
+        for g in self.cpu_graphs:
+            g.queue_draw()
 
     def update(self):
         while True:
@@ -189,12 +205,12 @@ def cpu_stats(n=20, sample_seconds=1.0):
 
 def on_activate(app):
     win = Gtk.ApplicationWindow(application=app)
-    win.set_keep_above(True)
+    #win.set_keep_above(True)
 
     cpu_graphs = CPUGraphCollection(0.5)
 
-    win.add(cpu_graphs)
-    win.show_all()
+    win.set_child(cpu_graphs)
+    win.present()
 
 if __name__ == '__main__':
     app = Gtk.Application(application_id='org.papill0n.Healthy')
