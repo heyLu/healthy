@@ -22,7 +22,7 @@ class CPUGraph(Gtk.Box):
         self.label.set_max_width_chars(20)
 
         self.drawing_area = Gtk.DrawingArea()
-        self.drawing_area.set_size_request(width=300, height=30)
+        self.drawing_area.set_size_request(width=300, height=25)
         self.drawing_area.connect("draw", self.on_draw)
 
         self.usage_label = Gtk.Label()
