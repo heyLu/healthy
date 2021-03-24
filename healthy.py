@@ -18,6 +18,7 @@ class CPUGraph(Gtk.Box):
         self.name = name
         self.cmdline = None
         self.cpu_usage = cpu_usage
+        self.max_cpu = os.cpu_count() * 100
 
         self.label = Gtk.Label()
         self.label.set_max_width_chars(20)
@@ -46,10 +47,14 @@ class CPUGraph(Gtk.Box):
         cairo_context.rectangle(0, 0, width, height)
         cairo_context.fill()
 
+        scale = 100
+        if max(self.cpu_usage) > 100:
+            scale = self.max_cpu
+
         # squiggly lines!
         cairo_context.set_source_rgb(0.3, 0.3, 0.7)
         for idx, cpu in enumerate(self.cpu_usage):
-            cairo_context.line_to(idx*(width/self.num_samples), height - cpu*(height/100))
+            cairo_context.line_to(idx*(width/self.num_samples), height - cpu*(height/scale))
         cairo_context.stroke()
 
 class CPUGraphCollection(Gtk.Box):
@@ -157,13 +162,15 @@ def cpu_stats(n=20, sample_seconds=1.0):
     pid_stats_after = dict([(pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()])
     global_cpu = read_global_stat() - global_cpu
 
+    cpu_count = os.cpu_count()
+
     pid_stats = []
     for pid in pid_stats_after:
         if pid in pid_stats_before:
             pid_before = pid_stats_before[pid]
             pid_after = pid_stats_after[pid]
             cpu_time = (pid_after.utime + pid_after.stime) - (pid_before.utime + pid_before.stime)
-            pid_after.cpu_usage = (cpu_time / global_cpu) * 100.0 * os.cpu_count()
+            pid_after.cpu_usage = (cpu_time / global_cpu) * 100.0 * cpu_count
 
             pid_stats.append(pid_after)
 
