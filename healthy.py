@@ -66,7 +66,7 @@ class CPUGraphCollection(Gtk.Box):
 
         self.cpu_graphs = []
         for _ in range(20):
-            cpu_graph = CPUGraph(self.num_samples, "", [])
+            cpu_graph = CPUGraph(self.num_samples, "", [0]*self.num_samples)
             self.pack_start(cpu_graph, True, True, 5)
             self.cpu_graphs.append(cpu_graph)
 
