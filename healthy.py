@@ -16,6 +16,7 @@ class CPUGraph(Gtk.Box):
 
         self.num_samples = num_samples
         self.name = name
+        self.cmdline = None
         self.cpu_usage = cpu_usage
 
         self.label = Gtk.Label()
@@ -35,6 +36,7 @@ class CPUGraph(Gtk.Box):
 
     def on_draw(self, widget, cairo_context):
         self.label.set_text(self.name)
+        self.label.set_tooltip_text(self.cmdline)
         self.usage_label.set_text(f"{int(self.cpu_usage[-1])}%")
 
         width, height = self.drawing_area.get_size_request()
@@ -91,6 +93,7 @@ class CPUGraphCollection(Gtk.Box):
         cpu_usages = cpu_usages[:20]
         for i, cpu_usage in enumerate(cpu_usages):
             self.cpu_graphs[i].name = cpu_usage[0].tcomm
+            self.cpu_graphs[i].cmdline = cpu_usage[0].cmdline
             self.cpu_graphs[i].cpu_usage = cpu_usage[1]
             self.cpu_graphs[i].queue_draw()
 
@@ -108,6 +111,13 @@ class PIDStat():
         self.tcomm = self.fields[1]
         self.utime = int(self.fields[13])
         self.stime = int(self.fields[14])
+
+        self.cmdline = None
+        try:
+            with open("/proc/"+self.fields[0]+"/cmdline") as f:
+                self.cmdline = f.readline().strip()
+        except Exception as ex:
+            print("Ignoring", ex)
 
         self.cpu_usage = 0.0
 
