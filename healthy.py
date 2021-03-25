@@ -47,6 +47,8 @@ class CPUGraph(Gtk.Box):
             self.label.set_tooltip_text(f"{self.pid}")
         self.usage_label.set_text(f"{int(self.cpu_usage[-1])}%")
 
+        self.drawing_area.set_tooltip_text(f"avg: {int(sum(self.cpu_usage) / len(self.cpu_usage))}%, max: {int(max(self.cpu_usage))}%")
+
         width, height = self.drawing_area.get_size_request()
 
         # white background
