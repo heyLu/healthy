@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 import os
-import random
 import threading
 import time
 
 import gi
 gi.require_version("GLib", "2.0")
-gi.require_version("Gdk", "3.0")
 gi.require_version("Gtk", "3.0")
-from gi.repository import GLib
-from gi.repository import Gdk
-from gi.repository import Gtk
+from gi.repository import GLib  # noqa: E402
+from gi.repository import Gtk   # noqa: E402
+
 
 class CPUGraph(Gtk.Box):
     def __init__(self, num_samples, name, cpu_usage):
@@ -66,6 +64,7 @@ class CPUGraph(Gtk.Box):
             cairo_context.line_to(idx*(width/self.num_samples), height - cpu*(height/scale))
         cairo_context.stroke()
 
+
 class CPUGraphCollection(Gtk.Box):
     def __init__(self, sample_seconds):
         Gtk.Box.__init__(self, orientation="vertical")
@@ -86,7 +85,6 @@ class CPUGraphCollection(Gtk.Box):
 
     def update(self):
         while True:
-            global_cpu = read_global_stat()
             top_20_pids = cpu_stats(self.sample_seconds)
             cpu_usages = []
             for pid in top_20_pids:
@@ -115,6 +113,7 @@ class CPUGraphCollection(Gtk.Box):
                 self.cpu_graphs[i].cpu_usage = cpu_usage[1]
 
             GLib.idle_add(self.queue_draw)
+
 
 class PIDStat():
     def __init__(self, stat_line):
@@ -146,6 +145,8 @@ class PIDStat():
 
     def __eq__(self, other):
         return (self.pid, self.tcomm) == (other.pid, other.tcomm)
+
+
 # https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/filesystems/proc.rst
 def read_stat(pid):
     try:
@@ -157,11 +158,13 @@ def read_stat(pid):
         # return fake stat that should never appear in stuff
         return PIDStat("-1 (<error>) Z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
 
+
 def read_global_stat():
     # user + nice + system + idle + iowait + irq + softirq + steal
     with open("/proc/stat") as f:
         global_stat = [int(x) for x in f.readline().strip()[len("cpu  "):].split()]
         return sum(global_stat[:8])
+
 
 # inspired by https://github.com/scaidermern/top-processes/blob/master/top_proc.c
 def cpu_stats(n=20, sample_seconds=1.0):
@@ -186,6 +189,7 @@ def cpu_stats(n=20, sample_seconds=1.0):
     pid_stats.sort(key=lambda stat: stat.cpu_usage, reverse=True)
     return pid_stats[:20]
 
+
 def on_activate(app):
     win = Gtk.ApplicationWindow(application=app)
     win.set_keep_above(True)
@@ -194,6 +198,7 @@ def on_activate(app):
 
     win.add(cpu_graphs)
     win.show_all()
+
 
 if __name__ == '__main__':
     app = Gtk.Application(application_id='org.papill0n.Healthy')
