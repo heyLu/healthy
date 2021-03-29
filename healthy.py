@@ -121,25 +121,22 @@ class PIDStat():
         name_start, name_end = stat_line.index('('), stat_line.index(')')
         name = stat_line[name_start+1:name_end]
         stat_line = stat_line[:name_start] + stat_line[name_end+2:]
-        self.fields = stat_line.split(" ")
-        self.fields.insert(1, name)
+        fields = stat_line.split()
+        fields.insert(1, name)
 
-        self.pid = int(self.fields[0])
-        self.tcomm = self.fields[1]
-        self.utime = int(self.fields[13])
-        self.stime = int(self.fields[14])
+        self.pid = int(fields[0])
+        self.tcomm = fields[1]
+        self.utime = int(fields[13])
+        self.stime = int(fields[14])
 
         self.cmdline = None
         try:
-            with open("/proc/"+self.fields[0]+"/cmdline") as f:
+            with open("/proc/"+fields[0]+"/cmdline", encoding="UTF-8") as f:
                 self.cmdline = f.readline().strip().replace("\x00", " ")
         except Exception as ex:
             print("Ignoring", ex)
 
         self.cpu_usage = 0.0
-
-    def __getitem__(self, idx):
-        return self.fields[idx]
 
     def __repr__(self):
         return f'PIDStat({self.pid}, "{self.tcomm}")'
@@ -152,7 +149,7 @@ class PIDStat():
 # https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/filesystems/proc.rst
 def read_stat(pid):
     try:
-        with open("/proc/"+pid+"/stat") as f:
+        with open("/proc/"+pid+"/stat", encoding="UTF-8") as f:
             stat_line = f.readline().strip()
             return PIDStat(stat_line)
     except Exception as ex:
@@ -163,15 +160,15 @@ def read_stat(pid):
 def read_global_stat():
     # user + nice + system + idle + iowait + irq + softirq + steal
     with open("/proc/stat") as f:
-        global_stat = [int(x) for x in f.readline().strip()[len("cpu  "):].split(" ")]
+        global_stat = [int(x) for x in f.readline().strip()[len("cpu  "):].split()]
         return sum(global_stat[:8])
 
 # inspired by https://github.com/scaidermern/top-processes/blob/master/top_proc.c
 def cpu_stats(n=20, sample_seconds=1.0):
     global_cpu = read_global_stat()
-    pid_stats_before = dict([(pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()])
+    pid_stats_before = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
     time.sleep(sample_seconds)
-    pid_stats_after = dict([(pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()])
+    pid_stats_after = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
     global_cpu = read_global_stat() - global_cpu
 
     cpu_count = os.cpu_count()
