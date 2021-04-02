@@ -39,7 +39,7 @@ class CPUGraph(Gtk.Box):
         self.pack_end(self.usage_label, False, True, 0)
         self.pack_end(self.drawing_area, False, True, 5)
 
-    def on_draw(self, widget, cairo_context):
+    def update(self):
         self.label.set_label(self.name)
         if self.cmdline:
             self.label.set_tooltip_text(f"{self.pid} - {self.cmdline}")
@@ -49,6 +49,7 @@ class CPUGraph(Gtk.Box):
 
         self.drawing_area.set_tooltip_text(f"avg: {int(sum(self.cpu_usage) / len(self.cpu_usage))}%, max: {int(max(self.cpu_usage))}%")
 
+    def on_draw(self, widget, cairo_context):
         style_context = self.get_style_context();
         width, height = self.drawing_area.get_allocated_width(), self.drawing_area.get_allocated_height()
 
@@ -64,6 +65,8 @@ class CPUGraph(Gtk.Box):
         for idx, cpu in enumerate(self.cpu_usage):
             cairo_context.line_to(idx*(width/self.num_samples), height - cpu*(height/scale))
         cairo_context.stroke()
+
+        return False
 
 
 class CPUGraphCollection(Gtk.Box):
@@ -83,6 +86,11 @@ class CPUGraphCollection(Gtk.Box):
 
         self.bg_thread = threading.Thread(target=self.update, daemon=True)
         self.bg_thread.start()
+
+    def update_graphs(self):
+        for cpu_graph in self.cpu_graphs:
+            cpu_graph.update()
+        GLib.idle_add(self.queue_draw)
 
     def update(self):
         while True:
@@ -113,7 +121,7 @@ class CPUGraphCollection(Gtk.Box):
                 self.cpu_graphs[i].cmdline = cpu_usage[0].cmdline
                 self.cpu_graphs[i].cpu_usage = cpu_usage[1]
 
-            GLib.idle_add(self.queue_draw)
+            GLib.idle_add(self.update_graphs)
 
 
 class PIDStat():
