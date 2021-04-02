@@ -82,15 +82,29 @@ class CPUGraphCollection(Gtk.Box):
             self.pack_start(cpu_graph, True, True, 5)
             self.cpu_graphs.append(cpu_graph)
 
+    def update_graphs(self, cpu_usages):
+        for i, cpu_usage in enumerate(cpu_usages):
+            self.cpu_graphs[i].name = cpu_usage[0].tcomm
+            self.cpu_graphs[i].pid = cpu_usage[0].pid
+            self.cpu_graphs[i].cmdline = cpu_usage[0].cmdline
+            self.cpu_graphs[i].cpu_usage = cpu_usage[1]
+
+            self.cpu_graphs[i].update()
+
+        GLib.idle_add(self.queue_draw)
+
+
+class PIDStatsCollector():
+    def __init__(self, sample_seconds, update_cpu_fn):
+        self.sample_seconds = sample_seconds
+        self.num_samples = int(60 / self.sample_seconds)
+
+        self.update_cpu_fn = update_cpu_fn
+
         self.cpu = {}
 
         self.bg_thread = threading.Thread(target=self.update, daemon=True)
         self.bg_thread.start()
-
-    def update_graphs(self):
-        for cpu_graph in self.cpu_graphs:
-            cpu_graph.update()
-        GLib.idle_add(self.queue_draw)
 
     def update(self):
         while True:
@@ -115,13 +129,8 @@ class CPUGraphCollection(Gtk.Box):
             cpu_usages = list(self.cpu.items())
             cpu_usages.sort(key=lambda u: sum(u[1]), reverse=True)
             cpu_usages = cpu_usages[:20]
-            for i, cpu_usage in enumerate(cpu_usages):
-                self.cpu_graphs[i].name = cpu_usage[0].tcomm
-                self.cpu_graphs[i].pid = cpu_usage[0].pid
-                self.cpu_graphs[i].cmdline = cpu_usage[0].cmdline
-                self.cpu_graphs[i].cpu_usage = cpu_usage[1]
 
-            GLib.idle_add(self.update_graphs)
+            GLib.idle_add(self.update_cpu_fn, cpu_usages)
 
 
 class PIDStat():
@@ -204,6 +213,7 @@ def on_activate(app):
     win.set_keep_above(True)
 
     cpu_graphs = CPUGraphCollection(0.5)
+    pid_stats_collector = PIDStatsCollector(0.5, cpu_graphs.update_graphs)
 
     if os.getenv('ONLY_CPU'):
         win.add(cpu_graphs)
