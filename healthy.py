@@ -108,30 +108,35 @@ class PIDStatsCollector():
 
     def update(self):
         while True:
-            top_20_pids = cpu_stats(self.sample_seconds)
-            cpu_usages = []
-            for pid in top_20_pids:
-                if pid not in self.cpu:
-                    self.cpu[pid] = [0]*self.num_samples
+            stats = process_stats(self.sample_seconds)
 
-                self.cpu[pid].append(pid.cpu_usage)
-                if len(self.cpu[pid]) > self.num_samples:
-                    self.cpu[pid].pop(0)
+            top_20_cpu = self.collect_top_20(self.cpu, stats, sort_key=lambda stat: stat.cpu_usage)
+            GLib.idle_add(self.update_cpu_fn, top_20_cpu)
 
-            for pid in self.cpu:
-                if pid not in top_20_pids:
-                    self.cpu[pid].append(0)
-                    if len(self.cpu[pid]) > self.num_samples:
-                        self.cpu[pid].pop(0)
+    def collect_top_20(self, per_pid_stats, stats, sort_key=lambda stat: stat.cpu_usage):
+        stats.sort(key=sort_key, reverse=True)
+        top_20 = stats[:20]
 
-                cpu_usages.append((pid, self.cpu[pid]))
+        usages = []
+        for pid in top_20:
+            if pid not in per_pid_stats:
+                per_pid_stats[pid] = [0]*self.num_samples
 
-            cpu_usages = list(self.cpu.items())
-            cpu_usages.sort(key=lambda u: sum(u[1]), reverse=True)
-            cpu_usages = cpu_usages[:20]
+            per_pid_stats[pid].append(sort_key(pid))
+            if len(per_pid_stats[pid]) > self.num_samples:
+                per_pid_stats[pid].pop(0)
 
-            GLib.idle_add(self.update_cpu_fn, cpu_usages)
+        for pid in per_pid_stats:
+            if pid not in top_20:
+                per_pid_stats[pid].append(0)
+                if len(per_pid_stats[pid]) > self.num_samples:
+                    per_pid_stats[pid].pop(0)
 
+            usages.append((pid, per_pid_stats[pid]))
+
+        usages = list(per_pid_stats.items())
+        usages.sort(key=lambda u: sum(u[1]), reverse=True)
+        return usages[:20]
 
 class PIDStat():
     def __init__(self, stat_line):
@@ -204,8 +209,7 @@ def cpu_stats(n=20, sample_seconds=1.0):
 
             pid_stats.append(pid_after)
 
-    pid_stats.sort(key=lambda stat: stat.cpu_usage, reverse=True)
-    return pid_stats[:20]
+    return pid_stats
 
 
 def on_activate(app):
