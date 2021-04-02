@@ -197,7 +197,16 @@ def on_activate(app):
 
     cpu_graphs = CPUGraphCollection(0.5)
 
-    win.add(cpu_graphs)
+    if os.getenv('ONLY_CPU'):
+        win.add(cpu_graphs)
+    else:
+        notebook = Gtk.Notebook()
+        notebook.append_page(cpu_graphs, Gtk.Label(label='CPU'))
+        notebook.append_page(Gtk.Label(label='Memory stats to appear here...'), Gtk.Label(label='Memory'))
+        notebook.append_page(Gtk.Label(label='Network stats to appear here...'), Gtk.Label(label='Network'))
+        notebook.foreach(lambda child: notebook.child_set_property(child, "tab-expand", True))
+        win.add(notebook)
+
     win.show_all()
 
 
