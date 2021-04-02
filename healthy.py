@@ -23,6 +23,7 @@ class CPUGraph(Gtk.Box):
         self.max_cpu = os.cpu_count() * 100
 
         self.label = Gtk.Label()
+        self.label.set_width_chars(20)
         self.label.set_max_width_chars(20)
         self.label.set_single_line_mode(True)
 
@@ -49,7 +50,7 @@ class CPUGraph(Gtk.Box):
         self.drawing_area.set_tooltip_text(f"avg: {int(sum(self.cpu_usage) / len(self.cpu_usage))}%, max: {int(max(self.cpu_usage))}%")
 
         style_context = self.get_style_context();
-        width, height = self.drawing_area.get_size_request()
+        width, height = self.drawing_area.get_allocated_width(), self.drawing_area.get_allocated_height()
 
         # background (theme-dependent)
         Gtk.render_background(style_context, cairo_context, 0, 0, width, height)
