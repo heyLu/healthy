@@ -96,17 +96,19 @@ class CPUGraphCollection(Gtk.Box):
 
 
 class PIDStatsCollector():
-    def __init__(self, sample_seconds, update_cpu_fn, update_mem_fn, update_net_fn):
+    def __init__(self, sample_seconds, update_cpu_fn, update_mem_fn, update_net_fn, update_io_fn):
         self.sample_seconds = sample_seconds
         self.num_samples = int(60 / self.sample_seconds)
 
         self.update_cpu_fn = update_cpu_fn
         self.update_mem_fn = update_mem_fn
         self.update_net_fn = update_net_fn
+        self.update_io_fn = update_io_fn
 
         self.cpu = {}
         self.mem = {}
         self.net = {}
+        self.io = {}
 
         self.bg_thread = threading.Thread(target=self.update, daemon=True)
         self.bg_thread.start()
@@ -123,6 +125,9 @@ class PIDStatsCollector():
 
             top_20_net = self.collect_top_20(self.net, stats, sort_key=lambda stat: stat.net_usage)
             GLib.idle_add(self.update_net_fn, top_20_net)
+
+            top_20_io = self.collect_top_20(self.io, stats, sort_key=lambda stat: stat.io_usage)
+            GLib.idle_add(self.update_io_fn, top_20_io)
 
     def collect_top_20(self, per_pid_stats, stats, sort_key=lambda stat: stat.cpu_usage):
         stats.sort(key=sort_key, reverse=True)
@@ -150,7 +155,7 @@ class PIDStatsCollector():
         return usages[:20]
 
 class PIDStat():
-    def __init__(self, stat_line, statm_line, net_bytes):
+    def __init__(self, stat_line, statm_line, net_bytes, io_bytes):
         name_start, name_end = stat_line.index('('), stat_line.index(')')
         name = stat_line[name_start+1:name_end]
         stat_line = stat_line[:name_start] + stat_line[name_end+2:]
@@ -171,6 +176,11 @@ class PIDStat():
 
         self.receive_bytes = net_bytes[0]
         self.transmit_bytes = net_bytes[1]
+        self.net_bytes = net_bytes[0] + net_bytes[1]
+
+        self.read_bytes = io_bytes[0]
+        self.write_bytes = io_bytes[1]
+        self.io_bytes = io_bytes[0] + io_bytes[1]
 
         self.cmdline = None
         try:
@@ -182,6 +192,7 @@ class PIDStat():
         self.cpu_usage = 0.0
         self.mem_usage = 0.0
         self.net_usage = 0.0
+        self.io_usage = 0.0
 
     def __repr__(self):
         return f'PIDStat({self.pid}, "{self.tcomm}")'
@@ -207,11 +218,25 @@ def read_stat(pid):
         #        to get per-process network stats (probably pcap)
         net = read_net_dev("/proc/"+pid+"/net/dev")
 
-        return PIDStat(stat_line, statm_line, net)
+        read_bytes = 0
+        write_bytes = 0
+        try:
+            with open("/proc/"+pid+"/io") as f:
+                f.readline() # rchar - chars read
+                f.readline() # wchar - chars written
+                f.readline() # syscr - syscalls read
+                f.readline() # syscw - syscalls write
+                read_bytes = int(f.readline().strip().split()[1])
+                write_bytes = int(f.readline().strip().split()[1])
+        except:
+            # can't read io usage for non-user processes?
+            pass
+
+        return PIDStat(stat_line, statm_line, net, (read_bytes, write_bytes))
     except Exception as ex:
         print("Ignoring", ex)
         # return fake stat that should never appear in stuff
-        return PIDStat("-1 (<error>) Z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0", "0 0 0 0 0 0 0", (0, 0))
+        return PIDStat("-1 (<error>) Z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0", "0 0 0 0 0 0 0", (0, 0), (0, 0))
 
 
 def read_global_cpu():
@@ -265,6 +290,8 @@ def process_stats(sample_seconds=1.0):
     global_transmit_bytes = net_after[1] - net_before[1]
     global_net_bytes = float(global_receive_bytes + global_transmit_bytes)
 
+    global_io_bytes = sum((stat.io_bytes for stat in pid_stats_after.values())) - sum((stat.io_bytes for stat in pid_stats_before.values()))
+
     cpu_count = os.cpu_count()
     getconf = subprocess.run(["getconf", "PAGE_SIZE"], capture_output=True)
     page_size = int(getconf.stdout.strip())
@@ -280,6 +307,9 @@ def process_stats(sample_seconds=1.0):
             net_bytes = (pid_after.receive_bytes + pid_after.transmit_bytes) - (pid_before.receive_bytes + pid_before.transmit_bytes)
             if net_bytes > 0.0:
                 pid_after.net_usage = (net_bytes / global_net_bytes) * 100.0
+            io_bytes = pid_after.io_bytes - pid_before.io_bytes
+            if io_bytes > 0.0:
+                pid_after.io_usage = (io_bytes / global_io_bytes) * 100.0
 
             pid_stats.append(pid_after)
 
@@ -294,7 +324,10 @@ def on_activate(app):
     cpu_graphs = CPUGraphCollection(sample_seconds)
     mem_graphs = CPUGraphCollection(sample_seconds)
     net_graphs = CPUGraphCollection(sample_seconds)
-    pid_stats_collector = PIDStatsCollector(sample_seconds, cpu_graphs.update_graphs, mem_graphs.update_graphs, net_graphs.update_graphs)
+    io_graphs = CPUGraphCollection(sample_seconds)
+    pid_stats_collector = PIDStatsCollector(sample_seconds,
+            cpu_graphs.update_graphs, mem_graphs.update_graphs,
+            net_graphs.update_graphs, io_graphs.update_graphs)
 
     if os.getenv('ONLY_CPU'):
         win.add(cpu_graphs)
@@ -303,6 +336,7 @@ def on_activate(app):
         notebook.append_page(cpu_graphs, Gtk.Label(label='CPU'))
         notebook.append_page(mem_graphs, Gtk.Label(label='Memory'))
         notebook.append_page(net_graphs, Gtk.Label(label='Network'))
+        notebook.append_page(io_graphs, Gtk.Label(label='IO'))
         notebook.foreach(lambda child: notebook.child_set_property(child, "tab-expand", True))
         win.add(notebook)
 
