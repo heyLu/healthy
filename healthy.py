@@ -47,12 +47,11 @@ class CPUGraph(Gtk.Box):
 
         self.drawing_area.set_tooltip_text(f"avg: {int(sum(self.cpu_usage) / len(self.cpu_usage))}%, max: {int(max(self.cpu_usage))}%")
 
+        style_context = self.get_style_context();
         width, height = self.drawing_area.get_size_request()
 
-        # white background
-        cairo_context.set_source_rgb(1, 1, 1)
-        cairo_context.rectangle(0, 0, width, height)
-        cairo_context.fill()
+        # background (theme-dependent)
+        Gtk.render_background(style_context, cairo_context, 0, 0, width, height)
 
         scale = 100
         if max(self.cpu_usage) > 100:
