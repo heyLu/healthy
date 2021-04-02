@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import sys
 import threading
 import time
 
@@ -202,4 +203,4 @@ def on_activate(app):
 if __name__ == '__main__':
     app = Gtk.Application(application_id='org.papill0n.Healthy')
     app.connect('activate', on_activate)
-    app.run(None)
+    app.run(sys.argv)
