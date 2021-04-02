@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import subprocess
 import threading
 import time
 
@@ -139,7 +140,7 @@ class PIDStatsCollector():
         return usages[:20]
 
 class PIDStat():
-    def __init__(self, stat_line):
+    def __init__(self, stat_line, statm_line):
         name_start, name_end = stat_line.index('('), stat_line.index(')')
         name = stat_line[name_start+1:name_end]
         stat_line = stat_line[:name_start] + stat_line[name_end+2:]
@@ -150,6 +151,13 @@ class PIDStat():
         self.tcomm = fields[1]
         self.utime = int(fields[13])
         self.stime = int(fields[14])
+
+        #self.vsize = int(self.fields[21])
+        #self.rss = int(self.fields[22])
+
+        statm_fields = statm_line.split(" ")
+        self.size = int(statm_fields[0])
+        self.resident = int(statm_fields[1])
 
         self.cmdline = None
         try:
@@ -175,29 +183,44 @@ def read_stat(pid):
     try:
         with open("/proc/"+pid+"/stat", encoding="UTF-8") as f:
             stat_line = f.readline().strip()
-            return PIDStat(stat_line)
+        with open("/proc/"+pid+"/statm") as f:
+            statm_line = f.readline().strip()
+
+        return PIDStat(stat_line, statm_line)
     except Exception as ex:
         print("Ignoring", ex)
         # return fake stat that should never appear in stuff
-        return PIDStat("-1 (<error>) Z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+        return PIDStat("-1 (<error>) Z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0", "0 0 0 0 0 0 0")
 
 
-def read_global_stat():
+def read_global_cpu():
     # user + nice + system + idle + iowait + irq + softirq + steal
     with open("/proc/stat") as f:
         global_stat = [int(x) for x in f.readline().strip()[len("cpu  "):].split()]
         return sum(global_stat[:8])
 
 
+def read_global_mem():
+    # inspired by https://github.com/Alexays/Waybar/blob/600afaf530974c9ef2fec1e61808836712dfde0a/src/modules/memory/common.cpp#L16-L22
+    with open("/proc/meminfo") as f:
+        mem_total = int(f.readline().strip().split()[1])
+        f.readline() # skip mem_free
+        mem_avail = int(f.readline().strip().split()[1])
+        return (mem_total - mem_avail) * 1024
+
+
 # inspired by https://github.com/scaidermern/top-processes/blob/master/top_proc.c
-def cpu_stats(n=20, sample_seconds=1.0):
-    global_cpu = read_global_stat()
+def process_stats(sample_seconds=1.0):
+    global_cpu = read_global_cpu()
     pid_stats_before = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
     time.sleep(sample_seconds)
     pid_stats_after = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
-    global_cpu = read_global_stat() - global_cpu
+    global_cpu = read_global_cpu() - global_cpu
+    global_mem = read_global_mem()
 
     cpu_count = os.cpu_count()
+    getconf = subprocess.run(["getconf", "PAGE_SIZE"], capture_output=True)
+    page_size = int(getconf.stdout.strip())
 
     pid_stats = []
     for pid in pid_stats_after:
@@ -206,6 +229,7 @@ def cpu_stats(n=20, sample_seconds=1.0):
             pid_after = pid_stats_after[pid]
             cpu_time = (pid_after.utime + pid_after.stime) - (pid_before.utime + pid_before.stime)
             pid_after.cpu_usage = (cpu_time / global_cpu) * 100.0 * cpu_count
+            pid_after.mem_usage = ((pid_after.resident * page_size) / global_mem) * 100
 
             pid_stats.append(pid_after)
 
