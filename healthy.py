@@ -96,15 +96,17 @@ class CPUGraphCollection(Gtk.Box):
 
 
 class PIDStatsCollector():
-    def __init__(self, sample_seconds, update_cpu_fn, update_mem_fn):
+    def __init__(self, sample_seconds, update_cpu_fn, update_mem_fn, update_net_fn):
         self.sample_seconds = sample_seconds
         self.num_samples = int(60 / self.sample_seconds)
 
         self.update_cpu_fn = update_cpu_fn
         self.update_mem_fn = update_mem_fn
+        self.update_net_fn = update_net_fn
 
         self.cpu = {}
         self.mem = {}
+        self.net = {}
 
         self.bg_thread = threading.Thread(target=self.update, daemon=True)
         self.bg_thread.start()
@@ -118,6 +120,9 @@ class PIDStatsCollector():
 
             top_20_mem = self.collect_top_20(self.mem, stats, sort_key=lambda stat: stat.mem_usage)
             GLib.idle_add(self.update_mem_fn, top_20_mem)
+
+            top_20_net = self.collect_top_20(self.net, stats, sort_key=lambda stat: stat.net_usage)
+            GLib.idle_add(self.update_net_fn, top_20_net)
 
     def collect_top_20(self, per_pid_stats, stats, sort_key=lambda stat: stat.cpu_usage):
         stats.sort(key=sort_key, reverse=True)
@@ -145,7 +150,7 @@ class PIDStatsCollector():
         return usages[:20]
 
 class PIDStat():
-    def __init__(self, stat_line, statm_line):
+    def __init__(self, stat_line, statm_line, net_bytes):
         name_start, name_end = stat_line.index('('), stat_line.index(')')
         name = stat_line[name_start+1:name_end]
         stat_line = stat_line[:name_start] + stat_line[name_end+2:]
@@ -164,6 +169,9 @@ class PIDStat():
         self.size = int(statm_fields[0])
         self.resident = int(statm_fields[1])
 
+        self.receive_bytes = net_bytes[0]
+        self.transmit_bytes = net_bytes[1]
+
         self.cmdline = None
         try:
             with open("/proc/"+fields[0]+"/cmdline", encoding="UTF-8") as f:
@@ -172,6 +180,8 @@ class PIDStat():
             print("Ignoring", ex)
 
         self.cpu_usage = 0.0
+        self.mem_usage = 0.0
+        self.net_usage = 0.0
 
     def __repr__(self):
         return f'PIDStat({self.pid}, "{self.tcomm}")'
@@ -190,12 +200,18 @@ def read_stat(pid):
             stat_line = f.readline().strip()
         with open("/proc/"+pid+"/statm") as f:
             statm_line = f.readline().strip()
+        # FIXME: /proc/<pid>/net/dev is per-namespace, not per process,
+        #        which is not useful at all on a normal desktop system
+        #
+        #        as far as i can tell we need root/some capabilities
+        #        to get per-process network stats (probably pcap)
+        net = read_net_dev("/proc/"+pid+"/net/dev")
 
-        return PIDStat(stat_line, statm_line)
+        return PIDStat(stat_line, statm_line, net)
     except Exception as ex:
         print("Ignoring", ex)
         # return fake stat that should never appear in stuff
-        return PIDStat("-1 (<error>) Z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0", "0 0 0 0 0 0 0")
+        return PIDStat("-1 (<error>) Z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0", "0 0 0 0 0 0 0", (0, 0))
 
 
 def read_global_cpu():
@@ -214,14 +230,40 @@ def read_global_mem():
         return (mem_total - mem_avail) * 1024
 
 
+def read_net_dev(path="/proc/net/dev"):
+    # 0       1         2       3    4    5    6     7          8         9        10      11   12   13   14    15      16
+	#         Receive                                                    |Transmit
+    # iface   bytes     packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    # wlp3s0: 131283187 111770  0    0    0    0     0          0         11322006 90733   0    0    0    0     0       0
+    receive_bytes = 0
+    transmit_bytes = 0
+    with open(path) as f:
+        # skip initial two header lines
+        f.readline()
+        f.readline()
+        for line in f.readlines():
+            fields = line.strip().split()
+            if fields[0] == "lo":
+                continue
+            receive_bytes += int(fields[1])
+            transmit_bytes += int(fields[9])
+    return (receive_bytes, transmit_bytes)
+
+
 # inspired by https://github.com/scaidermern/top-processes/blob/master/top_proc.c
 def process_stats(sample_seconds=1.0):
     global_cpu = read_global_cpu()
+    net_before = read_net_dev("/proc/net/dev")
     pid_stats_before = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
     time.sleep(sample_seconds)
     pid_stats_after = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
     global_cpu = read_global_cpu() - global_cpu
+    net_after = read_net_dev("/proc/net/dev")
     global_mem = read_global_mem()
+
+    global_receive_bytes = net_after[0] - net_before[0]
+    global_transmit_bytes = net_after[1] - net_before[1]
+    global_net_bytes = float(global_receive_bytes + global_transmit_bytes)
 
     cpu_count = os.cpu_count()
     getconf = subprocess.run(["getconf", "PAGE_SIZE"], capture_output=True)
@@ -235,6 +277,9 @@ def process_stats(sample_seconds=1.0):
             cpu_time = (pid_after.utime + pid_after.stime) - (pid_before.utime + pid_before.stime)
             pid_after.cpu_usage = (cpu_time / global_cpu) * 100.0 * cpu_count
             pid_after.mem_usage = ((pid_after.resident * page_size) / global_mem) * 100
+            net_bytes = (pid_after.receive_bytes + pid_after.transmit_bytes) - (pid_before.receive_bytes + pid_before.transmit_bytes)
+            if net_bytes > 0.0:
+                pid_after.net_usage = (net_bytes / global_net_bytes) * 100.0
 
             pid_stats.append(pid_after)
 
@@ -245,9 +290,11 @@ def on_activate(app):
     win = Gtk.ApplicationWindow(application=app)
     win.set_keep_above(True)
 
-    cpu_graphs = CPUGraphCollection(0.5)
-    mem_graphs = CPUGraphCollection(0.5)
-    pid_stats_collector = PIDStatsCollector(0.5, cpu_graphs.update_graphs, mem_graphs.update_graphs)
+    sample_seconds = 1.0
+    cpu_graphs = CPUGraphCollection(sample_seconds)
+    mem_graphs = CPUGraphCollection(sample_seconds)
+    net_graphs = CPUGraphCollection(sample_seconds)
+    pid_stats_collector = PIDStatsCollector(sample_seconds, cpu_graphs.update_graphs, mem_graphs.update_graphs, net_graphs.update_graphs)
 
     if os.getenv('ONLY_CPU'):
         win.add(cpu_graphs)
@@ -255,7 +302,7 @@ def on_activate(app):
         notebook = Gtk.Notebook()
         notebook.append_page(cpu_graphs, Gtk.Label(label='CPU'))
         notebook.append_page(mem_graphs, Gtk.Label(label='Memory'))
-        notebook.append_page(Gtk.Label(label='Network stats to appear here...'), Gtk.Label(label='Network'))
+        notebook.append_page(net_graphs, Gtk.Label(label='Network'))
         notebook.foreach(lambda child: notebook.child_set_property(child, "tab-expand", True))
         win.add(notebook)
 
