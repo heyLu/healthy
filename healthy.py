@@ -96,13 +96,15 @@ class CPUGraphCollection(Gtk.Box):
 
 
 class PIDStatsCollector():
-    def __init__(self, sample_seconds, update_cpu_fn):
+    def __init__(self, sample_seconds, update_cpu_fn, update_mem_fn):
         self.sample_seconds = sample_seconds
         self.num_samples = int(60 / self.sample_seconds)
 
         self.update_cpu_fn = update_cpu_fn
+        self.update_mem_fn = update_mem_fn
 
         self.cpu = {}
+        self.mem = {}
 
         self.bg_thread = threading.Thread(target=self.update, daemon=True)
         self.bg_thread.start()
@@ -113,6 +115,9 @@ class PIDStatsCollector():
 
             top_20_cpu = self.collect_top_20(self.cpu, stats, sort_key=lambda stat: stat.cpu_usage)
             GLib.idle_add(self.update_cpu_fn, top_20_cpu)
+
+            top_20_mem = self.collect_top_20(self.mem, stats, sort_key=lambda stat: stat.mem_usage)
+            GLib.idle_add(self.update_mem_fn, top_20_mem)
 
     def collect_top_20(self, per_pid_stats, stats, sort_key=lambda stat: stat.cpu_usage):
         stats.sort(key=sort_key, reverse=True)
@@ -241,14 +246,15 @@ def on_activate(app):
     win.set_keep_above(True)
 
     cpu_graphs = CPUGraphCollection(0.5)
-    pid_stats_collector = PIDStatsCollector(0.5, cpu_graphs.update_graphs)
+    mem_graphs = CPUGraphCollection(0.5)
+    pid_stats_collector = PIDStatsCollector(0.5, cpu_graphs.update_graphs, mem_graphs.update_graphs)
 
     if os.getenv('ONLY_CPU'):
         win.add(cpu_graphs)
     else:
         notebook = Gtk.Notebook()
         notebook.append_page(cpu_graphs, Gtk.Label(label='CPU'))
-        notebook.append_page(Gtk.Label(label='Memory stats to appear here...'), Gtk.Label(label='Memory'))
+        notebook.append_page(mem_graphs, Gtk.Label(label='Memory'))
         notebook.append_page(Gtk.Label(label='Network stats to appear here...'), Gtk.Label(label='Network'))
         notebook.foreach(lambda child: notebook.child_set_property(child, "tab-expand", True))
         win.add(notebook)
