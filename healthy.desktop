@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=healthy
+GenericName=System Monitor
+Comment=A tiny Linux process monitor
+TryExec=healthy
+Exec=healthy
+Icon=preferences-system-details
+Categories=System;Monitor
