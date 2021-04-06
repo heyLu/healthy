@@ -305,10 +305,10 @@ def process_stats(sample_seconds=1.0):
             pid_after.cpu_usage = (cpu_time / global_cpu) * 100.0 * cpu_count
             pid_after.mem_usage = ((pid_after.resident * page_size) / global_mem) * 100
             net_bytes = (pid_after.receive_bytes + pid_after.transmit_bytes) - (pid_before.receive_bytes + pid_before.transmit_bytes)
-            if net_bytes > 0.0:
+            if global_net_bytes > 0.0:
                 pid_after.net_usage = (net_bytes / global_net_bytes) * 100.0
             io_bytes = pid_after.io_bytes - pid_before.io_bytes
-            if io_bytes > 0.0:
+            if global_io_bytes > 0.0:
                 pid_after.io_usage = (io_bytes / global_io_bytes) * 100.0
 
             pid_stats.append(pid_after)
