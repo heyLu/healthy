@@ -7,8 +7,10 @@ import time
 
 import gi
 gi.require_version("GLib", "2.0")
+gi.require_version("Gdk", "3.0")
 gi.require_version("Gtk", "3.0")
 from gi.repository import GLib  # noqa: E402
+from gi.repository import Gdk   # noqa: E402
 from gi.repository import Gtk   # noqa: E402
 
 
@@ -316,6 +318,18 @@ def process_stats(sample_seconds=1.0):
     return pid_stats
 
 
+def on_key_press(widget, event):
+    alt = event.state & Gdk.ModifierType.MOD1_MASK
+    if alt and event.keyval == Gdk.KEY_1:
+        widget.set_current_page(0)
+    elif alt and event.keyval == Gdk.KEY_2:
+        widget.set_current_page(1)
+    elif alt and event.keyval == Gdk.KEY_3:
+        widget.set_current_page(2)
+    elif alt and event.keyval == Gdk.KEY_4:
+        widget.set_current_page(3)
+
+
 def on_activate(app):
     win = Gtk.ApplicationWindow(application=app)
     win.set_keep_above(True)
@@ -333,6 +347,7 @@ def on_activate(app):
         win.add(cpu_graphs)
     else:
         notebook = Gtk.Notebook()
+        notebook.connect("key-press-event", on_key_press)
         notebook.append_page(cpu_graphs, Gtk.Label(label='CPU'))
         notebook.append_page(mem_graphs, Gtk.Label(label='Memory'))
         notebook.append_page(net_graphs, Gtk.Label(label='Network'))
