@@ -14,6 +14,9 @@ from gi.repository import Gdk   # noqa: E402
 from gi.repository import Gtk   # noqa: E402
 
 
+PAGE_SIZE = None
+
+
 class CPUGraph(Gtk.Box):
     def __init__(self, num_samples, name, cpu_usage):
         Gtk.Box.__init__(self)
@@ -295,8 +298,6 @@ def process_stats(sample_seconds=1.0):
     global_io_bytes = sum((stat.io_bytes for stat in pid_stats_after.values())) - sum((stat.io_bytes for stat in pid_stats_before.values()))
 
     cpu_count = os.cpu_count()
-    getconf = subprocess.run(["getconf", "PAGE_SIZE"], capture_output=True)
-    page_size = int(getconf.stdout.strip())
 
     pid_stats = []
     for pid in pid_stats_after:
@@ -305,7 +306,7 @@ def process_stats(sample_seconds=1.0):
             pid_after = pid_stats_after[pid]
             cpu_time = (pid_after.utime + pid_after.stime) - (pid_before.utime + pid_before.stime)
             pid_after.cpu_usage = (cpu_time / global_cpu) * 100.0 * cpu_count
-            pid_after.mem_usage = ((pid_after.resident * page_size) / global_mem) * 100
+            pid_after.mem_usage = ((pid_after.resident * PAGE_SIZE) / global_mem) * 100
             net_bytes = (pid_after.receive_bytes + pid_after.transmit_bytes) - (pid_before.receive_bytes + pid_before.transmit_bytes)
             if global_net_bytes > 0.0:
                 pid_after.net_usage = (net_bytes / global_net_bytes) * 100.0
@@ -331,6 +332,10 @@ def on_key_press(widget, event):
 
 
 def on_activate(app):
+    global PAGE_SIZE
+    getconf = subprocess.run(["getconf", "PAGE_SIZE"], capture_output=True)
+    PAGE_SIZE = int(getconf.stdout.strip())
+
     win = Gtk.ApplicationWindow(application=app)
     win.set_keep_above(True)
 
