@@ -6,7 +6,16 @@ tracepoint:ext4:ext4_da_write_begin {
 	@writes[pid, comm] = sum(args->len);
 }
 
+kretprobe:ext4_file_read_iter {
+	if (retval > 0) {
+		@reads[pid, comm] = sum(retval);
+	}
+}
+
 interval:s:1 {
 	print(@writes);
 	clear(@writes);
+
+	print(@reads);
+	clear(@reads);
 }
