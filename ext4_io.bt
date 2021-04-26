@@ -1,0 +1,12 @@
+tracepoint:ext4:ext4_write_begin {
+	@writes[pid, comm] = sum(args->len);
+}
+
+tracepoint:ext4:ext4_da_write_begin {
+	@writes[pid, comm] = sum(args->len);
+}
+
+interval:s:1 {
+	print(@writes);
+	clear(@writes);
+}
