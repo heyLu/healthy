@@ -1,0 +1,46 @@
+tracepoint:syscalls:sys_enter_connect {
+	@active[pid, args->fd] = nsecs;
+}
+
+tracepoint:syscalls:sys_enter_write,
+tracepoint:syscalls:sys_enter_writev
+/@active[pid, args->fd]/ {
+	@writing[tid] = nsecs;
+}
+tracepoint:syscalls:sys_exit_write,
+tracepoint:syscalls:sys_exit_writev
+/@writing[tid]/ {
+	if (args->ret > 0) {
+		@writes[pid, comm] = sum(args->ret);
+	}
+	delete(@writing[tid]);
+}
+
+tracepoint:syscalls:sys_enter_read,
+tracepoint:syscalls:sys_enter_readv
+/@active[pid, args->fd]/ {
+	@reading[tid] = nsecs;
+}
+tracepoint:syscalls:sys_exit_read,
+tracepoint:syscalls:sys_exit_readv
+/@reading[tid]/ {
+	if (args->ret > 0) {
+		@reads[pid, comm] = sum(args->ret);
+	}
+	delete(@reading[tid]);
+}
+
+tracepoint:syscalls:sys_enter_close /@active[pid, args->fd]/ {
+	delete(@active[pid, args->fd]);
+}
+
+interval:s:1 {
+	print(@writes);
+	clear(@writes);
+	print(@reads);
+	clear(@reads);
+}
+
+END {
+	clear(@active);
+}
