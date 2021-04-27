@@ -1,0 +1,33 @@
+BEGIN {
+	@please_print = 0;
+}
+
+kfunc:dev_queue_xmit
+{
+	$skb = (struct sk_buff *)args->skb;
+	$len = $skb->len + $skb->data_len + $skb->mac_len + $skb->hdr_len;
+	$dev = (struct net_device *)$skb->dev;
+	//printf("%d\t%s\t%s\t%d\t%d\t%s\t%d\n", pid, comm, probe, $skb->len, $len, $dev->name, $skb->tc_at_ingress);
+	@network[pid] = sum($skb->len);
+	@please_print = 1;
+}
+
+kfunc:netif_receive_skb
+{
+	$skb = (struct sk_buff *)args->skb;
+	$len = $skb->len + $skb->data_len + $skb->mac_len + $skb->hdr_len;
+	$dev = (struct net_device *)$skb->dev;
+	//printf("%d\t%s\t%s\t%d\t%d\t%s\t%d\n", pid, comm, probe, $skb->len, $len, $dev->name, $skb->tc_at_ingress);
+	@network[pid] = sum($skb->len);
+	@please_print = 1;
+}
+
+interval:s:1 /@please_print/ {
+	print(@network);
+	clear(@network);
+	@please_print = 0;
+}
+
+END {
+	delete(@please_print);
+}
