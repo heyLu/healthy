@@ -344,9 +344,9 @@ def on_activate(app):
     mem_graphs = CPUGraphCollection(sample_seconds)
     net_graphs = CPUGraphCollection(sample_seconds)
     io_graphs = CPUGraphCollection(sample_seconds)
-    pid_stats_collector = PIDStatsCollector(sample_seconds,
-            cpu_graphs.update_graphs, mem_graphs.update_graphs,
-            net_graphs.update_graphs, io_graphs.update_graphs)
+    PIDStatsCollector(sample_seconds,
+                      cpu_graphs.update_graphs, mem_graphs.update_graphs,
+                      net_graphs.update_graphs, io_graphs.update_graphs)
 
     if os.getenv('ONLY_CPU'):
         win.add(cpu_graphs)
