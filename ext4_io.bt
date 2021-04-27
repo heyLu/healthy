@@ -1,18 +1,25 @@
+BEGIN {
+	@please_print = 0;
+}
+
 tracepoint:ext4:ext4_write_begin {
 	@writes[pid, comm] = sum(args->len);
+	@please_print = 1;
 }
 
 tracepoint:ext4:ext4_da_write_begin {
 	@writes[pid, comm] = sum(args->len);
+	@please_print = 1;
 }
 
 kretprobe:ext4_file_read_iter {
 	if (retval > 0) {
 		@reads[pid, comm] = sum(retval);
+		@please_print = 1;
 	}
 }
 
-interval:s:1 {
+interval:s:1 /@please_print/ {
 	print(@writes);
 	clear(@writes);
 
