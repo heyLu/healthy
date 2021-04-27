@@ -319,6 +319,23 @@ def process_stats(sample_seconds=1.0):
     return pid_stats
 
 
+class BPFNetworkStatsCollector():
+    def __init__(self):
+        self.is_active = False
+
+        self.bg_thread = threading.Thread(target=self.run_bpftrace, daemon=True)
+        self.bg_thread.start()
+
+    def run_bpftrace(self):
+        self.bpftrace_process = subprocess.Popen(["pkexec", "--disable-internal-agent", "bpftrace", "/home/lu/k/healthy/net_io.bt"],
+                                                 stdout=subprocess.PIPE)
+        print(self.bpftrace_process)
+
+        while True:
+            line = self.bpftrace_process.stdout.readline()
+            print(line)
+
+
 def on_key_press(widget, event):
     alt = event.state & Gdk.ModifierType.MOD1_MASK
     if alt and event.keyval == Gdk.KEY_1:
@@ -347,6 +364,8 @@ def on_activate(app):
     PIDStatsCollector(sample_seconds,
                       cpu_graphs.update_graphs, mem_graphs.update_graphs,
                       net_graphs.update_graphs, io_graphs.update_graphs)
+
+    bpf = BPFNetworkStatsCollector()
 
     if os.getenv('ONLY_CPU'):
         win.add(cpu_graphs)
