@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import os
+import re
 import sys
 import subprocess
 import threading
@@ -229,12 +230,6 @@ def read_stat(pid):
             stat_line = f.readline().strip()
         with open("/proc/"+pid+"/statm") as f:
             statm_line = f.readline().strip()
-        # FIXME: /proc/<pid>/net/dev is per-namespace, not per process,
-        #        which is not useful at all on a normal desktop system
-        #
-        #        as far as i can tell we need root/some capabilities
-        #        to get per-process network stats (probably pcap)
-        net = read_net_dev("/proc/"+pid+"/net/dev")
 
         read_bytes = 0
         write_bytes = 0
@@ -250,7 +245,7 @@ def read_stat(pid):
             # can't read io usage for non-user processes?
             pass
 
-        return PIDStat(stat_line, statm_line, net, (read_bytes, write_bytes))
+        return PIDStat(stat_line, statm_line, (0, 0), (read_bytes, write_bytes))
     except Exception as ex:
         print("Ignoring", ex)
         # return fake stat that should never appear in stuff
@@ -293,20 +288,65 @@ def read_net_dev(path="/proc/net/dev"):
     return (receive_bytes, transmit_bytes)
 
 
+ConnectionInfo = namedtuple("ConnectionInfo",
+                            ["pid", "fd", "bytes_sent", "bytes_received"])
+
+
+ss_tip_re = re.compile(
+    r"pid=(\d+),fd=(\d+).*bytes_sent:(\d+).*bytes_received:(\d+)"
+)
+
+
+def parse_ss_tip(line):
+    """ Parses lines output by `ss -tipHOn`. """
+    match = ss_tip_re.search(line)
+    if not match:
+        return None
+
+    return ConnectionInfo(pid=int(match.group(1)), fd=int(match.group(2)),
+                          bytes_sent=int(match.group(3)),
+                          bytes_received=int(match.group(4)))
+
+
+def read_net_per_process():
+    ss_tip = subprocess.run(["ss", "--tcp", "--info", "--processes",
+                                   "--no-header", "--oneline", "--numeric"],
+                            capture_output=True)
+    return (parse_ss_tip(
+        line.decode("utf-8")) for line in ss_tip.stdout.strip().split(b"\n"))
+
+
 # inspired by https://github.com/scaidermern/top-processes/blob/master/top_proc.c
 def process_stats(sample_seconds=1.0, group_by=None):
     global_cpu = read_global_cpu()
-    net_before = read_net_dev("/proc/net/dev")
+    net_before = read_net_per_process()
     pid_stats_before = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
     time.sleep(sample_seconds)
     pid_stats_after = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
     global_cpu = read_global_cpu() - global_cpu
-    net_after = read_net_dev("/proc/net/dev")
+    net_after = read_net_per_process()
     global_mem = read_global_mem()
 
-    global_receive_bytes = net_after[0] - net_before[0]
-    global_transmit_bytes = net_after[1] - net_before[1]
-    global_net_bytes = float(global_receive_bytes + global_transmit_bytes)
+    net_stats = {}
+    global_net_bytes = 0
+    for info in net_after:
+        if not info:
+            continue
+        global_net_bytes += info.bytes_sent + info.bytes_received
+        if info.pid not in net_stats:
+            net_stats[info.pid] = 0
+        net_stats[info.pid] += info.bytes_sent + info.bytes_received
+    for info in net_before:
+        if not info:
+            continue
+        if info.pid not in net_stats:
+            # connection disappeared, can't calculate difference
+            # TODO: what about differing fds though?
+            print(info, "disappeared")
+            continue
+
+        global_net_bytes -= info.bytes_sent + info.bytes_received
+        net_stats[info.pid] -= info.bytes_sent + info.bytes_received
 
     global_io_bytes = sum((stat.io_bytes for stat in pid_stats_after.values())) - sum((stat.io_bytes for stat in pid_stats_before.values()))
 
@@ -320,9 +360,8 @@ def process_stats(sample_seconds=1.0, group_by=None):
             cpu_time = (pid_after.utime + pid_after.stime) - (pid_before.utime + pid_before.stime)
             pid_after.cpu_usage = (cpu_time / global_cpu) * 100.0 * cpu_count
             pid_after.mem_usage = ((pid_after.resident * PAGE_SIZE) / global_mem) * 100
-            net_bytes = (pid_after.receive_bytes + pid_after.transmit_bytes) - (pid_before.receive_bytes + pid_before.transmit_bytes)
-            if global_net_bytes > 0.0:
-                pid_after.net_usage = (net_bytes / global_net_bytes) * 100.0
+            if global_net_bytes > 0.0 and int(pid) in net_stats:
+                pid_after.net_usage = (net_stats[int(pid)] / global_net_bytes) * 100.0
             io_bytes = pid_after.io_bytes - pid_before.io_bytes
             if global_io_bytes > 0.0:
                 pid_after.io_usage = (io_bytes / global_io_bytes) * 100.0
