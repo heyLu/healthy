@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from collections import defaultdict
 import os
 import sys
 import subprocess
@@ -15,6 +16,7 @@ from gi.repository import Gtk   # noqa: E402
 
 
 PAGE_SIZE = None
+GROUP_BY = os.getenv('GROUP_BY', default='pid')
 
 
 class CPUGraph(Gtk.Box):
@@ -120,7 +122,11 @@ class PIDStatsCollector():
 
     def update(self):
         while True:
-            stats = process_stats(self.sample_seconds)
+            group_by = None
+            if GROUP_BY == 'ppid':
+                def group_by(stat):
+                    return stat.ppid
+            stats = process_stats(self.sample_seconds, group_by=group_by)
 
             top_20_cpu = self.collect_top_20(self.cpu, stats, sort_key=lambda stat: stat.cpu_usage)
             GLib.idle_add(self.update_cpu_fn, top_20_cpu)
@@ -169,6 +175,7 @@ class PIDStat():
 
         self.pid = int(fields[0])
         self.tcomm = fields[1]
+        self.ppid = int(fields[5])
         self.utime = int(fields[13])
         self.stime = int(fields[14])
 
@@ -203,10 +210,16 @@ class PIDStat():
         return f'PIDStat({self.pid}, "{self.tcomm}")'
 
     def __hash__(self):
-        return hash((self.pid, self.tcomm))
+        if GROUP_BY == 'ppid':
+            return hash((self.ppid))
+        else:
+            return hash((self.pid, self.tcomm))
 
     def __eq__(self, other):
-        return (self.pid, self.tcomm) == (other.pid, other.tcomm)
+        if GROUP_BY == 'ppid':
+            return self.ppid == other.ppid
+        else:
+            return (self.pid, self.tcomm) == (other.pid, other.tcomm)
 
 
 # https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/filesystems/proc.rst
@@ -281,7 +294,7 @@ def read_net_dev(path="/proc/net/dev"):
 
 
 # inspired by https://github.com/scaidermern/top-processes/blob/master/top_proc.c
-def process_stats(sample_seconds=1.0):
+def process_stats(sample_seconds=1.0, group_by=None):
     global_cpu = read_global_cpu()
     net_before = read_net_dev("/proc/net/dev")
     pid_stats_before = dict(((pid, read_stat(pid)) for pid in os.listdir("/proc") if pid.isnumeric()))
@@ -316,6 +329,27 @@ def process_stats(sample_seconds=1.0):
 
             pid_stats.append(pid_after)
 
+    if group_by:
+        grouped = defaultdict(list)
+        for stat in pid_stats:
+            by = group_by(stat)
+            if by not in grouped:
+                grouped[by] = stat
+                grouped[by].num_processes = 1
+            else:
+                grouped[by].num_processes += 1
+                if stat.pid < grouped[by].pid:
+                    grouped[by].pid = stat.pid
+                    grouped[by].tcomm = stat.tcomm
+                grouped[by].cpu_usage += stat.cpu_usage
+                grouped[by].mem_usage += stat.mem_usage
+                grouped[by].net_usage += stat.net_usage
+                grouped[by].io_usage += stat.io_usage
+        for by, stat in grouped.items():
+            if stat.num_processes > 1:
+                # TODO: this count is never updated in the ui
+                grouped[by].tcomm += f" ({stat.num_processes})"
+        pid_stats = list(grouped.values())
     return pid_stats
 
 
