@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from collections import defaultdict, namedtuple
+from collections.abc import Callable
 import os
 import re
 import sys
@@ -77,16 +78,15 @@ class PIDStat():
             return (self.pid, self.tcomm) == (other.pid, other.tcomm)
 
 
-class CPUGraph(Gtk.Box):
-    def __init__(self, num_samples, name, cpu_usage):
+class Graph(Gtk.Box):
+    def __init__(self, num_samples, name, usage):
         Gtk.Box.__init__(self)
 
         self.num_samples = num_samples
         self.name = name
         self.pid = -1
         self.cmdline = None
-        self.cpu_usage = cpu_usage
-        self.max_cpu = os.cpu_count() * 100
+        self.usage = usage
 
         self.label = Gtk.Label()
         self.label.set_width_chars(20)
@@ -105,15 +105,19 @@ class CPUGraph(Gtk.Box):
         self.pack_end(self.usage_label, False, True, 0)
         self.pack_end(self.drawing_area, False, True, 5)
 
-    def update(self):
-        self.label.set_label(self.name)
+    def update_labels(self):
+        self.label.set_label(self.name[:20])
         if self.cmdline:
             self.label.set_tooltip_text(f"{self.pid} - {self.cmdline}")
         else:
             self.label.set_tooltip_text(f"{self.pid}")
-        self.usage_label.set_text(f"{int(self.cpu_usage[-1])}%")
 
-        self.drawing_area.set_tooltip_text(f"avg: {int(sum(self.cpu_usage) / len(self.cpu_usage))}%, max: {int(max(self.cpu_usage))}%")
+        self.usage_label.set_text(f"{int(self.usage[-1])}")
+
+    def scale(self):
+        """ Returns the value to scale with, 0 to 100 by default. """
+
+        return 100
 
     def on_draw(self, widget, cairo_context):
         style_context = self.get_style_context()
@@ -122,40 +126,58 @@ class CPUGraph(Gtk.Box):
         # background (theme-dependent)
         Gtk.render_background(style_context, cairo_context, 0, 0, width, height)
 
-        scale = 100
-        if max(self.cpu_usage) > 100:
-            scale = self.max_cpu
+        scale = self.scale()
 
         # squiggly lines!
         cairo_context.set_source_rgb(0.3, 0.3, 0.7)
-        for idx, cpu in enumerate(self.cpu_usage):
-            cairo_context.line_to(idx*(width/self.num_samples), height - cpu*(height/scale))
+        for idx, usage in enumerate(self.usage):
+            cairo_context.line_to(idx*(width/self.num_samples), height - usage*(height/scale))
         cairo_context.stroke()
 
         return False
 
 
-class CPUGraphCollection(Gtk.Box):
-    def __init__(self, sample_seconds):
+class CPUGraph(Graph):
+    def __init__(self, num_samples, name, usage: list[float]):
+        super().__init__(num_samples, name, usage)
+
+        self.max_cpu = os.cpu_count() * 100
+
+    def scale(self):
+        if max(self.usage) > 100:
+            return self.max_cpu
+        else:
+            return 100
+
+    def update_labels(self):
+        super().update_labels()
+
+        self.usage_label.set_text(f"{int(self.usage[-1])}%")
+
+        self.drawing_area.set_tooltip_text(f"avg: {int(sum(self.usage) / len(self.usage))}%, max: {int(max(self.usage))}%")
+
+
+class GraphCollection(Gtk.Box):
+    def __init__(self, sample_seconds, new_graph: Callable[[int, str, list[float]], Graph]):
         Gtk.Box.__init__(self, orientation="vertical")
 
         self.sample_seconds = sample_seconds
         self.num_samples = int(60 / self.sample_seconds)
 
-        self.cpu_graphs = []
+        self.graphs = []
         for _ in range(20):
-            cpu_graph = CPUGraph(self.num_samples, "", [0]*self.num_samples)
-            self.pack_start(cpu_graph, True, True, 5)
-            self.cpu_graphs.append(cpu_graph)
+            graph = new_graph(self.num_samples, "", [0]*self.num_samples)
+            self.pack_start(graph, True, True, 5)
+            self.graphs.append(graph)
 
-    def update_graphs(self, cpu_usages: list[tuple[PIDStat, list[float]]]):
-        for i, cpu_usage in enumerate(cpu_usages):
-            self.cpu_graphs[i].name = cpu_usage[0].tcomm
-            self.cpu_graphs[i].pid = cpu_usage[0].pid
-            self.cpu_graphs[i].cmdline = cpu_usage[0].cmdline
-            self.cpu_graphs[i].cpu_usage = cpu_usage[1]
+    def update_graphs(self, usages: list[tuple[PIDStat, list[float]]]):
+        for i, usage in enumerate(usages):
+            self.graphs[i].name = usage[0].tcomm
+            self.graphs[i].pid = usage[0].pid
+            self.graphs[i].cmdline = usage[0].cmdline
+            self.graphs[i].usage = usage[1]
 
-            self.cpu_graphs[i].update()
+            self.graphs[i].update_labels()
 
         GLib.idle_add(self.queue_draw)
 
@@ -414,10 +436,10 @@ def on_activate(app):
     win.set_keep_above(True)
 
     sample_seconds = 1.0
-    cpu_graphs = CPUGraphCollection(sample_seconds)
-    mem_graphs = CPUGraphCollection(sample_seconds)
-    net_graphs = CPUGraphCollection(sample_seconds)
-    io_graphs = CPUGraphCollection(sample_seconds)
+    cpu_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
+    mem_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
+    net_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
+    io_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
     pid_stats_collector = PIDStatsCollector(sample_seconds,
             cpu_graphs.update_graphs, mem_graphs.update_graphs,
             net_graphs.update_graphs, io_graphs.update_graphs)
