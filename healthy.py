@@ -336,26 +336,6 @@ def read_global_mem():
         return (mem_total - mem_avail) * 1024
 
 
-def read_net_dev(path="/proc/net/dev"):
-    # 0       1         2       3    4    5    6     7          8         9        10      11   12   13   14    15      16
-	#         Receive                                                    |Transmit
-    # iface   bytes     packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-    # wlp3s0: 131283187 111770  0    0    0    0     0          0         11322006 90733   0    0    0    0     0       0
-    receive_bytes = 0
-    transmit_bytes = 0
-    with open(path) as f:
-        # skip initial two header lines
-        f.readline()
-        f.readline()
-        for line in f.readlines():
-            fields = line.strip().split()
-            if fields[0] == "lo":
-                continue
-            receive_bytes += int(fields[1])
-            transmit_bytes += int(fields[9])
-    return (receive_bytes, transmit_bytes)
-
-
 ConnectionInfo = namedtuple("ConnectionInfo",
                             ["pid", "fd", "bytes_sent", "bytes_received"])
 
