@@ -396,11 +396,9 @@ def process_stats(sample_seconds=1.0, group_by=None):
     global_mem = read_global_mem()
 
     net_stats = {}
-    global_net_bytes = 0
     for info in net_after:
         if not info:
             continue
-        global_net_bytes += info.bytes_sent + info.bytes_received
         if info.pid not in net_stats:
             net_stats[info.pid] = 0
         net_stats[info.pid] += info.bytes_sent + info.bytes_received
@@ -413,10 +411,7 @@ def process_stats(sample_seconds=1.0, group_by=None):
             print(info, "disappeared")
             continue
 
-        global_net_bytes -= info.bytes_sent + info.bytes_received
         net_stats[info.pid] -= info.bytes_sent + info.bytes_received
-
-    global_io_bytes = sum((stat.io_bytes for stat in pid_stats_after.values())) - sum((stat.io_bytes for stat in pid_stats_before.values()))
 
     cpu_count = os.cpu_count()
 
