@@ -3,6 +3,16 @@
 Inspired by [Vitals](https://hmarr.com/blog/vitals/), I present to you
 `healthy`, which attempts to do the same, only for Linux.
 
+It's a little system monitor that keeps track of cpu, memory, network¹ ²
+and io usage for the last minute.  When something is misbehaving, you
+can now look for it and see who was spinning up your fans.
+
+¹ Network metrics currently only work for the current user, so system
+processes like updates are not included yet.
+
+² Network metrics currently only include TCP traffic, so UDP-based
+traffic is not accounted for.
+
 ![screenshot of healthy running](./screenshot.png)
 
 ## Installation
