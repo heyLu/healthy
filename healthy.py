@@ -114,6 +114,9 @@ class Graph(Gtk.Box):
 
         self.usage_label.set_text(f"{int(self.usage[-1])}")
 
+    def update_usage(self, usage):
+        self.usage = usage
+
     def scale(self):
         """ Returns the value to scale with, 0 to 100 by default. """
 
@@ -157,6 +160,45 @@ class CPUGraph(Graph):
         self.drawing_area.set_tooltip_text(f"avg: {int(sum(self.usage) / len(self.usage))}%, max: {int(max(self.usage))}%")
 
 
+class BytesGraph(Graph):
+    def __init__(self, num_samples, name, usage: list[float]):
+        super().__init__(num_samples, name, usage)
+
+        self.update_usage(usage)
+
+        # 5 characters, max is "999kb"
+        self.usage_label.set_width_chars(5)
+
+    def scale(self):
+        return max(self.max, 1)
+
+    def update_labels(self):
+        super().update_labels()
+
+        current_bytes = int(self.usage[-1] * self.factor)
+        self.usage_label.set_text(f"{current_bytes}{self.unit}")
+
+        avg_bytes = int((sum(self.usage) / len(self.usage)) * self.factor)
+        max_bytes = int(self.max * self.factor)
+        total_bytes = int(sum(self.usage) * self.factor)
+        self.drawing_area.set_tooltip_text(f"avg: {avg_bytes}{self.unit}, max: {max_bytes}{self.unit}, total: {total_bytes}{self.unit}")
+
+    def update_usage(self, usage):
+        super().update_usage(usage)
+
+        self.max = max(self.usage)
+
+        if self.max > 1024*1024:
+            self.unit = "mb"
+            self.factor = 1 / (1024*1024)
+        elif self.max > 1024:
+            self.unit = "kb"
+            self.factor = 1 / 1024
+        else:
+            self.unit = "b"
+            self.factor = 1
+
+
 class GraphCollection(Gtk.Box):
     def __init__(self, sample_seconds, new_graph: Callable[[int, str, list[float]], Graph]):
         Gtk.Box.__init__(self, orientation="vertical")
@@ -175,7 +217,8 @@ class GraphCollection(Gtk.Box):
             self.graphs[i].name = usage[0].tcomm
             self.graphs[i].pid = usage[0].pid
             self.graphs[i].cmdline = usage[0].cmdline
-            self.graphs[i].usage = usage[1]
+
+            self.graphs[i].update_usage(usage[1])
 
             self.graphs[i].update_labels()
 
@@ -215,6 +258,8 @@ class PIDStatsCollector():
             GLib.idle_add(self.update_mem_fn, top_20_mem)
 
             top_20_net = self.collect_top_20(self.net, stats, sort_key=lambda stat: stat.net_usage)
+            # TODO: calculate max bytes over last 60 seconds (not max cpu)
+            # TODO: display avg/max in bytes
             GLib.idle_add(self.update_net_fn, top_20_net)
 
             top_20_io = self.collect_top_20(self.io, stats, sort_key=lambda stat: stat.io_usage)
@@ -383,11 +428,13 @@ def process_stats(sample_seconds=1.0, group_by=None):
             cpu_time = (pid_after.utime + pid_after.stime) - (pid_before.utime + pid_before.stime)
             pid_after.cpu_usage = (cpu_time / global_cpu) * 100.0 * cpu_count
             pid_after.mem_usage = ((pid_after.resident * PAGE_SIZE) / global_mem) * 100
-            if global_net_bytes > 0.0 and int(pid) in net_stats:
-                pid_after.net_usage = (net_stats[int(pid)] / global_net_bytes) * 100.0
+            if int(pid) in net_stats and net_stats[int(pid)] > 0.0:
+                pid_after.net_usage = net_stats[int(pid)]
+            else:
+                pid_after.net_usage = 0
             io_bytes = pid_after.io_bytes - pid_before.io_bytes
-            if global_io_bytes > 0.0:
-                pid_after.io_usage = (io_bytes / global_io_bytes) * 100.0
+            if io_bytes > 0.0:
+                pid_after.io_usage = io_bytes
 
             pid_stats.append(pid_after)
 
@@ -438,8 +485,8 @@ def on_activate(app):
     sample_seconds = 1.0
     cpu_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
     mem_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
-    net_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
-    io_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
+    net_graphs = GraphCollection(sample_seconds, new_graph=BytesGraph)
+    io_graphs = GraphCollection(sample_seconds, new_graph=BytesGraph)
     pid_stats_collector = PIDStatsCollector(sample_seconds,
             cpu_graphs.update_graphs, mem_graphs.update_graphs,
             net_graphs.update_graphs, io_graphs.update_graphs)
