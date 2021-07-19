@@ -116,7 +116,7 @@ class CPUGraph(Gtk.Box):
         self.drawing_area.set_tooltip_text(f"avg: {int(sum(self.cpu_usage) / len(self.cpu_usage))}%, max: {int(max(self.cpu_usage))}%")
 
     def on_draw(self, widget, cairo_context):
-        style_context = self.get_style_context();
+        style_context = self.get_style_context()
         width, height = self.drawing_area.get_allocated_width(), self.drawing_area.get_allocated_height()
 
         # background (theme-dependent)
