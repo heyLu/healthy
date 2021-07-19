@@ -20,6 +20,63 @@ PAGE_SIZE = None
 GROUP_BY = os.getenv('GROUP_BY', default='pid')
 
 
+class PIDStat():
+    def __init__(self, stat_line, statm_line, net_bytes, io_bytes):
+        name_start, name_end = stat_line.index('('), stat_line.index(')')
+        name = stat_line[name_start+1:name_end]
+        stat_line = stat_line[:name_start] + stat_line[name_end+2:]
+        fields = stat_line.split()
+        fields.insert(1, name)
+
+        self.pid = int(fields[0])
+        self.tcomm = fields[1]
+        self.ppid = int(fields[5])
+        self.utime = int(fields[13])
+        self.stime = int(fields[14])
+
+        # self.vsize = int(self.fields[21])
+        # self.rss = int(self.fields[22])
+
+        statm_fields = statm_line.split(" ")
+        self.size = int(statm_fields[0])
+        self.resident = int(statm_fields[1])
+
+        self.receive_bytes = net_bytes[0]
+        self.transmit_bytes = net_bytes[1]
+        self.net_bytes = net_bytes[0] + net_bytes[1]
+
+        self.read_bytes = io_bytes[0]
+        self.write_bytes = io_bytes[1]
+        self.io_bytes = io_bytes[0] + io_bytes[1]
+
+        self.cmdline = None
+        try:
+            with open("/proc/"+fields[0]+"/cmdline", encoding="UTF-8") as f:
+                self.cmdline = f.readline().strip().replace("\x00", " ")
+        except Exception as ex:
+            print("Ignoring", ex)
+
+        self.cpu_usage = 0.0
+        self.mem_usage = 0.0
+        self.net_usage = 0.0
+        self.io_usage = 0.0
+
+    def __repr__(self):
+        return f'PIDStat({self.pid}, "{self.tcomm}")'
+
+    def __hash__(self):
+        if GROUP_BY == 'ppid':
+            return hash((self.ppid))
+        else:
+            return hash((self.pid, self.tcomm))
+
+    def __eq__(self, other):
+        if GROUP_BY == 'ppid':
+            return self.ppid == other.ppid
+        else:
+            return (self.pid, self.tcomm) == (other.pid, other.tcomm)
+
+
 class CPUGraph(Gtk.Box):
     def __init__(self, num_samples, name, cpu_usage):
         Gtk.Box.__init__(self)
@@ -91,7 +148,7 @@ class CPUGraphCollection(Gtk.Box):
             self.pack_start(cpu_graph, True, True, 5)
             self.cpu_graphs.append(cpu_graph)
 
-    def update_graphs(self, cpu_usages):
+    def update_graphs(self, cpu_usages: list[tuple[PIDStat, list[float]]]):
         for i, cpu_usage in enumerate(cpu_usages):
             self.cpu_graphs[i].name = cpu_usage[0].tcomm
             self.cpu_graphs[i].pid = cpu_usage[0].pid
@@ -165,62 +222,6 @@ class PIDStatsCollector():
         usages = list(per_pid_stats.items())
         usages.sort(key=lambda u: sum(u[1]), reverse=True)
         return usages[:20]
-
-class PIDStat():
-    def __init__(self, stat_line, statm_line, net_bytes, io_bytes):
-        name_start, name_end = stat_line.index('('), stat_line.index(')')
-        name = stat_line[name_start+1:name_end]
-        stat_line = stat_line[:name_start] + stat_line[name_end+2:]
-        fields = stat_line.split()
-        fields.insert(1, name)
-
-        self.pid = int(fields[0])
-        self.tcomm = fields[1]
-        self.ppid = int(fields[5])
-        self.utime = int(fields[13])
-        self.stime = int(fields[14])
-
-        #self.vsize = int(self.fields[21])
-        #self.rss = int(self.fields[22])
-
-        statm_fields = statm_line.split(" ")
-        self.size = int(statm_fields[0])
-        self.resident = int(statm_fields[1])
-
-        self.receive_bytes = net_bytes[0]
-        self.transmit_bytes = net_bytes[1]
-        self.net_bytes = net_bytes[0] + net_bytes[1]
-
-        self.read_bytes = io_bytes[0]
-        self.write_bytes = io_bytes[1]
-        self.io_bytes = io_bytes[0] + io_bytes[1]
-
-        self.cmdline = None
-        try:
-            with open("/proc/"+fields[0]+"/cmdline", encoding="UTF-8") as f:
-                self.cmdline = f.readline().strip().replace("\x00", " ")
-        except Exception as ex:
-            print("Ignoring", ex)
-
-        self.cpu_usage = 0.0
-        self.mem_usage = 0.0
-        self.net_usage = 0.0
-        self.io_usage = 0.0
-
-    def __repr__(self):
-        return f'PIDStat({self.pid}, "{self.tcomm}")'
-
-    def __hash__(self):
-        if GROUP_BY == 'ppid':
-            return hash((self.ppid))
-        else:
-            return hash((self.pid, self.tcomm))
-
-    def __eq__(self, other):
-        if GROUP_BY == 'ppid':
-            return self.ppid == other.ppid
-        else:
-            return (self.pid, self.tcomm) == (other.pid, other.tcomm)
 
 
 # https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/filesystems/proc.rst
