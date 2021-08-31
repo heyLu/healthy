@@ -68,12 +68,16 @@ class PIDStat():
     def __hash__(self):
         if GROUP_BY == 'ppid':
             return hash((self.ppid))
+        elif GROUP_BY == 'name':
+            return hash((self.tcomm))
         else:
             return hash((self.pid, self.tcomm))
 
     def __eq__(self, other):
         if GROUP_BY == 'ppid':
             return self.ppid == other.ppid
+        if GROUP_BY == 'name':
+            return self.tcomm == other.tcomm
         else:
             return (self.pid, self.tcomm) == (other.pid, other.tcomm)
 
@@ -249,6 +253,9 @@ class PIDStatsCollector():
             if GROUP_BY == 'ppid':
                 def group_by(stat):
                     return stat.ppid
+            elif GROUP_BY == 'name':
+                def group_by(stat):
+                    return stat.tcomm
             stats = process_stats(self.sample_seconds, group_by=group_by)
 
             top_20_cpu = self.collect_top_20(self.cpu, stats, sort_key=lambda stat: stat.cpu_usage)
