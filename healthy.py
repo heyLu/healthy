@@ -3,6 +3,7 @@ from collections import defaultdict, namedtuple
 from collections.abc import Callable
 import os
 import re
+import signal
 import sys
 import subprocess
 import threading
@@ -105,9 +106,39 @@ class Graph(Gtk.Box):
         # 4 characters, max is "100%"
         self.usage_label.set_width_chars(4)
 
-        self.pack_start(self.label, True, True, 5)
+        # make label clickable
+        self.label_box = Gtk.EventBox()
+        self.label_box.add(self.label)
+        self.label_box.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.label_box.connect("button-press-event", self.button_press)
+        self.pack_start(self.label_box, True, True, 5)
+
         self.pack_end(self.usage_label, False, True, 0)
         self.pack_end(self.drawing_area, False, True, 5)
+
+    def button_press(self, widget, event):
+        if event.triggers_context_menu():
+            self.menu = Gtk.Menu()
+
+            menu_stop = Gtk.MenuItem(label=f"Stop '{self.name}' ({self.pid})")
+            menu_stop.connect('activate', self.kill, self.pid)
+            self.menu.append(menu_stop)
+            menu_stop.show()
+
+            menu_kill = Gtk.MenuItem(label=f"Stop '{self.name}' ({self.pid}) forcefully")
+            menu_kill.connect('activate', self.kill_now, self.pid)
+            self.menu.append(menu_kill)
+            menu_kill.show()
+
+            self.menu.popup_at_pointer(event)
+
+        return True
+
+    def kill(self, item, pid):
+        os.kill(pid, signal.SIGTERM)
+
+    def kill_now(self, item, pid):
+        os.kill(pid, signal.SIGKILL)
 
     def update_labels(self):
         self.label.set_label(self.name[:20])
