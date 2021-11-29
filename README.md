@@ -21,6 +21,26 @@ On Arch Linux, this can be installed as `healthy-git` from the
 [AUR](https://wiki.archlinux.org/index.php/Arch_User_Repository):
 https://aur.archlinux.org/packages/healthy-git.
 
+### Run in background using Sway
+
+With [sway](https://github.com/swaywm/sway) it is possible run `healthy` in the
+background in a "scratchpad" like the following:
+
+```
+# ~/.config/sway/config
+
+for_window [app_id="healthy"] {
+	floating enable
+	move to scratchpad
+}
+
+exec healthy
+```
+
+This starts `healthy` in the background when sway starts and then calls the
+window to the front using the [keybindings or commands](https://github.com/swaywm/sway/blob/1.6.1/config.in#L162-L173)
+for the scratchpad:
+
 ## Development
 
 To run this locally, clone the repository and run `python healthy.py`.
