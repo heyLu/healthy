@@ -92,6 +92,7 @@ class Graph(Gtk.Box):
         self.pid = -1
         self.cmdline = None
         self.usage = usage
+        self.alive = True
 
         self.label = Gtk.Label()
         self.label.set_width_chars(20)
@@ -141,11 +142,20 @@ class Graph(Gtk.Box):
         os.kill(pid, signal.SIGKILL)
 
     def update_labels(self):
-        self.label.set_label(self.name[:20])
+        label_text = self.name[:20]
+        alive_text = ""
+        if not self.alive:
+            # grey out dead processes
+            label_text = f"<span color=\"#aaaaaa\">{label_text}</span>"
+            self.label.set_use_markup(True)
+
+            alive_text = " (killed)"
+        self.label.set_label(label_text)
+
         if self.cmdline:
-            self.label.set_tooltip_text(f"{self.pid} - {self.cmdline}")
+            self.label.set_tooltip_text(f"{self.pid}{alive_text} - {self.cmdline}")
         else:
-            self.label.set_tooltip_text(f"{self.pid}")
+            self.label.set_tooltip_text(f"{self.pid}{alive_text}")
 
         self.usage_label.set_text(f"{int(self.usage[-1])}")
 
@@ -247,10 +257,11 @@ class GraphCollection(Gtk.Box):
             self.pack_start(graph, True, True, 5)
             self.graphs.append(graph)
 
-    def update_graphs(self, usages: list[tuple[PIDStat, list[float]]]):
+    def update_graphs(self, usages: list[tuple[PIDStat, list[float]]], alive_pids: dict[int, bool]):
         for i, usage in enumerate(usages):
             self.graphs[i].name = usage[0].tcomm
             self.graphs[i].pid = usage[0].pid
+            self.graphs[i].alive = alive_pids[usage[0].pid]
             self.graphs[i].cmdline = usage[0].cmdline
 
             self.graphs[i].update_usage(usage[1])
@@ -289,19 +300,23 @@ class PIDStatsCollector():
                     return stat.tcomm
             stats = process_stats(self.sample_seconds, group_by=group_by)
 
+            alive_pids = defaultdict(lambda: False)
+            for pidstat in stats:
+                alive_pids[pidstat.pid] = True
+
             top_20_cpu = self.collect_top_20(self.cpu, stats, sort_key=lambda stat: stat.cpu_usage)
-            GLib.idle_add(self.update_cpu_fn, top_20_cpu)
+            GLib.idle_add(self.update_cpu_fn, top_20_cpu, alive_pids)
 
             top_20_mem = self.collect_top_20(self.mem, stats, sort_key=lambda stat: stat.mem_usage)
-            GLib.idle_add(self.update_mem_fn, top_20_mem)
+            GLib.idle_add(self.update_mem_fn, top_20_mem, alive_pids)
 
             top_20_net = self.collect_top_20(self.net, stats, sort_key=lambda stat: stat.net_usage)
             # TODO: calculate max bytes over last 60 seconds (not max cpu)
             # TODO: display avg/max in bytes
-            GLib.idle_add(self.update_net_fn, top_20_net)
+            GLib.idle_add(self.update_net_fn, top_20_net, alive_pids)
 
             top_20_io = self.collect_top_20(self.io, stats, sort_key=lambda stat: stat.io_usage)
-            GLib.idle_add(self.update_io_fn, top_20_io)
+            GLib.idle_add(self.update_io_fn, top_20_io, alive_pids)
 
     def collect_top_20(self, per_pid_stats, stats, sort_key=lambda stat: stat.cpu_usage):
         stats.sort(key=sort_key, reverse=True)
