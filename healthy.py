@@ -136,10 +136,24 @@ class Graph(Gtk.Box):
         return True
 
     def kill(self, item, pid):
-        os.kill(pid, signal.SIGTERM)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except Exception as ex:
+            self.show_error(ex)
 
     def kill_now(self, item, pid):
-        os.kill(pid, signal.SIGKILL)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exeption as ex:
+            self.show_error(ex)
+
+    def show_error(self, exception):
+        info = Gtk.InfoBar(message_type=Gtk.MessageType.WARNING)
+        info.get_content_area().add(Gtk.Label(label=str(exception)))
+        self.get_parent().pack_end(info, False, True, 0)
+        info.show_all()
+
+        GLib.timeout_add_seconds(2, lambda: info.destroy())
 
     def update_labels(self):
         label_text = self.name[:20]
