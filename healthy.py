@@ -122,12 +122,12 @@ class Graph(Gtk.Box):
             self.menu = Gtk.Menu()
 
             menu_stop = Gtk.MenuItem(label=f"Stop '{self.name}' ({self.pid})")
-            menu_stop.connect('activate', self.kill, self.pid)
+            menu_stop.connect('activate', self.kill, self.pid, self.cmdline or self.name)
             self.menu.append(menu_stop)
             menu_stop.show()
 
             menu_kill = Gtk.MenuItem(label=f"Stop '{self.name}' ({self.pid}) forcefully")
-            menu_kill.connect('activate', self.kill_now, self.pid)
+            menu_kill.connect('activate', self.kill_now, self.pid, self.cmdline or self.name)
             self.menu.append(menu_kill)
             menu_kill.show()
 
@@ -135,25 +135,25 @@ class Graph(Gtk.Box):
 
         return True
 
-    def kill(self, item, pid):
+    def kill(self, item, pid, command):
         try:
             os.kill(pid, signal.SIGTERM)
         except Exception as ex:
-            self.show_error(ex)
+            self.show_error(f"Killing '{command[:40]}' ({pid})", ex)
 
-    def kill_now(self, item, pid):
+    def kill_now(self, item, pid, command):
         try:
             os.kill(pid, signal.SIGKILL)
         except Exeption as ex:
-            self.show_error(ex)
+            self.show_error(f"Killing {pid}", ex)
 
-    def show_error(self, exception):
+    def show_error(self, msg, exception):
         info = Gtk.InfoBar(message_type=Gtk.MessageType.WARNING)
-        info.get_content_area().add(Gtk.Label(label=str(exception)))
+        info.get_content_area().add(Gtk.Label(label=f"{msg}: {exception}"))
         self.get_parent().pack_end(info, False, True, 0)
         info.show_all()
 
-        GLib.timeout_add_seconds(2, lambda: info.destroy())
+        GLib.timeout_add_seconds(5, lambda: info.destroy())
 
     def update_labels(self):
         label_text = self.name[:20]
