@@ -1,1 +1,2 @@
-PyGObject==3.40.0
+pycairo==1.23.0
+PyGObject==3.42.2
