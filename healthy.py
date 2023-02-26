@@ -516,39 +516,48 @@ def on_key_press(widget, event):
         widget.set_current_page(3)
 
 
-def on_activate(app):
-    global PAGE_SIZE
-    getconf = subprocess.run(["getconf", "PAGE_SIZE"], capture_output=True)
-    PAGE_SIZE = int(getconf.stdout.strip())
+class Healthy:
+    def on_startup(self, app):
+        global PAGE_SIZE
+        getconf = subprocess.run(["getconf", "PAGE_SIZE"], capture_output=True)
+        PAGE_SIZE = int(getconf.stdout.strip())
 
-    win = Gtk.ApplicationWindow(application=app)
-    win.set_keep_above(True)
+        self.win = Gtk.ApplicationWindow(application=app)
+        self.win.set_keep_above(True)
 
-    sample_seconds = 1.0
-    cpu_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
-    mem_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
-    net_graphs = GraphCollection(sample_seconds, new_graph=BytesGraph)
-    io_graphs = GraphCollection(sample_seconds, new_graph=BytesGraph)
-    pid_stats_collector = PIDStatsCollector(sample_seconds,
-            cpu_graphs.update_graphs, mem_graphs.update_graphs,
-            net_graphs.update_graphs, io_graphs.update_graphs)
+        sample_seconds = 1.0
+        cpu_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
+        mem_graphs = GraphCollection(sample_seconds, new_graph=CPUGraph)
+        net_graphs = GraphCollection(sample_seconds, new_graph=BytesGraph)
+        io_graphs = GraphCollection(sample_seconds, new_graph=BytesGraph)
+        pid_stats_collector = PIDStatsCollector(sample_seconds,
+                cpu_graphs.update_graphs, mem_graphs.update_graphs,
+                net_graphs.update_graphs, io_graphs.update_graphs)
 
-    if os.getenv('ONLY_CPU'):
-        win.add(cpu_graphs)
-    else:
-        notebook = Gtk.Notebook()
-        notebook.connect("key-press-event", on_key_press)
-        notebook.append_page(cpu_graphs, Gtk.Label(label='CPU'))
-        notebook.append_page(mem_graphs, Gtk.Label(label='Memory'))
-        notebook.append_page(net_graphs, Gtk.Label(label='Network'))
-        notebook.append_page(io_graphs, Gtk.Label(label='IO'))
-        notebook.foreach(lambda child: notebook.child_set_property(child, "tab-expand", True))
-        win.add(notebook)
+        if os.getenv('ONLY_CPU'):
+            self.win.add(cpu_graphs)
+        else:
+            notebook = Gtk.Notebook()
+            notebook.connect("key-press-event", on_key_press)
+            notebook.append_page(cpu_graphs, Gtk.Label(label='CPU'))
+            notebook.append_page(mem_graphs, Gtk.Label(label='Memory'))
+            notebook.append_page(net_graphs, Gtk.Label(label='Network'))
+            notebook.append_page(io_graphs, Gtk.Label(label='IO'))
+            notebook.foreach(lambda child:
+                             notebook.child_set_property(child,
+                                                         "tab-expand",
+                                                         True))
+            self.win.add(notebook)
 
-    win.show_all()
+        self.win.show_all()
+
+    def on_activate(self, app):
+        self.win.present_with_time(int(time.time()))
 
 
 if __name__ == '__main__':
     app = Gtk.Application(application_id='org.papill0n.Healthy')
-    app.connect('activate', on_activate)
+    healthy = Healthy()
+    app.connect('startup', healthy.on_startup)
+    app.connect('activate', healthy.on_activate)
     app.run(sys.argv)
